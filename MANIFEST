@@ -1,0 +1,6 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Net-Google-SafeBrowsing2-Redis.t
+lib/Net/Google/SafeBrowsing2/Redis.pm
