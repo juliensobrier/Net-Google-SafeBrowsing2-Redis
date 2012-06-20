@@ -194,7 +194,7 @@ sub get_add_chunks_nums {
 	my ($self, %args) 	= @_;
 	my $list			= $args{'list'}		|| '';
 
-	return $self->get_chunks_nums(type => 's', list => $list);
+	return $self->get_chunks_nums(type => 'a', list => $list);
 }
 
 sub get_sub_chunks_nums {
@@ -221,15 +221,26 @@ sub delete_add_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
-	foreach my $num (@$chunknums) {
-		my $keys = $self->redis()->keys("a$num*$list");
-		foreach my $key (@$keys) {
-			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
-		}
+# 	foreach my $num (@$chunknums) {
+# 		my $keys = $self->redis()->keys("a$num*$list");
+# 		foreach my $key (@$keys) {
+# 			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
+# 		}
+# 
+# 		$self->redis()->zrem("a$list", $num);
+# 	}
 
-		$self->redis()->zrem("a$list", $num);
+	
+	my $keys = $self->redis()->keys("a$list");
+	foreach my $key (@$keys) {
+		foreach my $num (@$chunknums) {
+			$self->redis()->del($key) if ($key =~ /^a$num/ && $self->redis()->hget($key, "chunknum") == $num);
+		}
 	}
 
+	foreach my $num (@$chunknums) {
+		$self->redis()->zrem("a$list", $num);
+	}
 }
 
 
@@ -238,12 +249,23 @@ sub delete_sub_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
-	foreach my $num (@$chunknums) {
-		my $keys = $self->redis()->keys("s$num*$list");
-		foreach my $key (@$keys) {
-			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
-		}
+# 	foreach my $num (@$chunknums) {
+# 		my $keys = $self->redis()->keys("s$num*$list");
+# 		foreach my $key (@$keys) {
+# 			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
+# 		}
+# 
+# 		$self->redis()->zrem("s$list", $num);
+# 	}
 
+	my $keys = $self->redis()->keys("s*$list");
+	foreach my $key (@$keys) {
+		foreach my $num (@$chunknums) {
+			$self->redis()->del($key) if ($key =~ /^s$num/ && $self->redis()->hget($key, "chunknum") == $num);
+		}
+	}
+
+	foreach my $num (@$chunknums) {
 		$self->redis()->zrem("s$list", $num);
 	}
 }
@@ -310,18 +332,33 @@ sub add_full_hashes {
 	}
 }
 
+# sub delete_full_hashes_1 {
+# 	my ($self, %args) 	= @_;
+# 	my $chunknums		= $args{chunknums}	|| [];
+# 	my $list			= $args{list}		|| croak "Missing list name\n";
+# 
+# 	foreach my $num (@$chunknums) {
+# 		my @keys = $self->redis()->keys("h$num*$list");
+# 		foreach my $key (@keys) {
+# 			$self->redis()->del($key);
+# 		}
+# 	}
+# }
+
 sub delete_full_hashes {
 	my ($self, %args) 	= @_;
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{list}		|| croak "Missing list name\n";
 
-	foreach my $num (@$chunknums) {
-		my @keys = $self->redis()->keys("h$num*$list");
-		foreach my $key (@keys) {
-			$self->redis()->del($key);
+	my @keys = $self->redis()->keys("h*$list");
+	foreach my $key (@keys) {
+		foreach my $num (@$chunknums) {
+			$self->redis()->del($key) if ($key =~ /^h$num/);
 		}
 	}
 }
+
+
 
 sub full_hash_error {
 	my ($self, %args) 	= @_;
