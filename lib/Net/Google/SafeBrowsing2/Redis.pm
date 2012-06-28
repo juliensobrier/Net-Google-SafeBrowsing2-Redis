@@ -14,7 +14,9 @@ our $VERSION = '0.2';
 
 =head1 NAME
 
-Net::Google::SafeBrowsing2::Redis - Redis as back-end storage for the Google Safe Browsing v2 database
+Net::Google::SafeBrowsing2::Redis - Redis as back-end storage for the Google Safe Browsing v2 database.
+
+The source code is available on github at L<https://github.com/juliensobrier/Net-Google-SafeBrowsing2-Redis>.
 
 =head1 SYNOPSIS
 
