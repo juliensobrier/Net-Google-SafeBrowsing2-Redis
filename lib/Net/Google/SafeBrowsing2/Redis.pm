@@ -9,7 +9,7 @@ use Carp;
 use Redis::hiredis;
 
 
-our $VERSION = '0.2';
+our $VERSION = '0.3';
 
 
 =head1 NAME
@@ -122,12 +122,16 @@ sub add_chunks {
 		$self->add_chunks_a(chunknum => $chunknum, chunks => $chunks, list => $list);
 	}
 
+	my $redis = $self->redis();
+
 	my $key = $type . $list;
-	$self->redis()->zadd($key, $chunknum, $chunknum);
+	$redis->zadd($key, $chunknum, $chunknum);
 
 	if (scalar @$chunks == 0) { # keep empty chunks
 		my $key = $type . $chunknum . $list;
-		$self->redis()->hmset($key, "list", $list, "hostkey", '', "prefix", '', "chunknum", $chunknum);
+		$redis->hmset($key, "list", $list, "hostkey", '', "prefix", '', "chunknum", $chunknum); # needed?
+
+		$redis->sadd($type . "l$chunknum$list", $key);
 	}
 }
 
@@ -137,10 +141,14 @@ sub add_chunks_a {
 	my $chunks			= $args{chunks}		|| [];
 	my $list			= $args{'list'}		|| '';
 
-	# TODO: use 1 command to set all values
+	my $redis = $self->redis();
+
 	foreach my $chunk (@$chunks) {
 		my $key = "a$chunknum" . $chunk->{host} . $chunk->{prefix} . $list;
-		$self->redis()->hmset($key, "list", $list, "hostkey", $chunk->{host}, "prefix", $chunk->{prefix}, "chunknum", $chunknum);
+		$redis->hmset($key, "list", $list, "hostkey", $chunk->{host}, "prefix", $chunk->{prefix}, "chunknum", $chunknum);
+		
+		$redis->sadd("al$chunknum$list", $key);
+		$redis->sadd("ah" . $chunk->{host}, $key);
 	}
 }
 
@@ -150,10 +158,14 @@ sub add_chunks_s {
 	my $chunks			= $args{chunks}		|| [];
 	my $list			= $args{'list'}		|| '';
 
-	# TODO: use 1 command to set all values
+	my $redis = $self->redis();
+
 	foreach my $chunk (@$chunks) {
 		my $key = "s$chunknum" . $chunk->{host} . $chunk->{prefix} . $chunk->{add_chunknum} . $list;
-		$self->redis()->hmset($key, "list", $list, "hostkey", $chunk->{host}, "prefix", $chunk->{prefix}, "addchunknum ", $chunk->{add_chunknum}, "chunknum", $chunknum);
+		$redis->hmset($key, "list", $list, "hostkey", $chunk->{host}, "prefix", $chunk->{prefix}, "addchunknum", $chunk->{add_chunknum}, "chunknum", $chunknum);
+
+		$redis->sadd("sl$chunknum$list", $key);
+		$redis->sadd("sh" . $chunk->{host}, $key);
 	}
 }
 
@@ -163,11 +175,16 @@ sub get_add_chunks {
 	my $hostkey			= $args{hostkey}	|| '';
 
 	my @list = ();
-	my $keys = $self->redis()->keys("a$hostkey*");
+	my $redis = $self->redis();
 
-	# TODO: use 1 command to get all values
+	my $keys = $redis->smembers("ah$hostkey");
+
 	foreach my $key (@$keys) {
-		my $chunk = to_hash($self->redis()->hgetall($key));
+		if (! $redis->exists($key)) { # clean up
+			$redis->srem("ah$hostkey", $key);
+			next;
+		}
+		my $chunk = to_hash($redis->hgetall($key));
 		push(@list, $chunk) if ($chunk->{hostkey} eq $hostkey);
 	}
 
@@ -180,11 +197,16 @@ sub get_sub_chunks {
 	my $hostkey			= $args{hostkey}	|| '';
 
 	my @list = ();
-	my $keys = $self->redis()->keys("s$hostkey*");
+	my $redis = $self->redis();
+	my $keys = $redis->smembers("sh$hostkey");
 
-	# TODO: use 1 command to get all values
 	foreach my $key (@$keys) {
-		my $chunk = to_hash($self->redis()->hgetall($key));
+		if (! $redis->exists($key)) { # cleanup
+			$redis->srem("sh$hostkey", $key);
+			next;
+		}
+
+		my $chunk = to_hash($redis->hgetall($key));
 		push(@list, $chunk) if ($chunk->{hostkey} eq $hostkey);
 	}
 
@@ -223,25 +245,17 @@ sub delete_add_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
-# 	foreach my $num (@$chunknums) {
-# 		my $keys = $self->redis()->keys("a$num*$list");
-# 		foreach my $key (@$keys) {
-# 			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
-# 		}
-# 
-# 		$self->redis()->zrem("a$list", $num);
-# 	}
-
-	
-	my $keys = $self->redis()->keys("a$list");
-	foreach my $key (@$keys) {
-		foreach my $num (@$chunknums) {
-			$self->redis()->del($key) if ($key =~ /^a$num/ && $self->redis()->hget($key, "chunknum") == $num);
-		}
-	}
+	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
-		$self->redis()->zrem("a$list", $num);
+		my $list = "al$num$list";
+		while ($redis->scard($list) > 0) {
+			my $key = $redis->spop($list);
+
+			$redis->del($key);
+		}
+
+		$redis->zrem("a$list", $num);
 	}
 }
 
@@ -251,24 +265,18 @@ sub delete_sub_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
-# 	foreach my $num (@$chunknums) {
-# 		my $keys = $self->redis()->keys("s$num*$list");
-# 		foreach my $key (@$keys) {
-# 			$self->redis()->del($key) if ($self->redis()->hget($key, "chunknum") == $num);
-# 		}
-# 
-# 		$self->redis()->zrem("s$list", $num);
-# 	}
-
-	my $keys = $self->redis()->keys("s*$list");
-	foreach my $key (@$keys) {
-		foreach my $num (@$chunknums) {
-			$self->redis()->del($key) if ($key =~ /^s$num/ && $self->redis()->hget($key, "chunknum") == $num);
-		}
-	}
+	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
-		$self->redis()->zrem("s$list", $num);
+		my $list = "sl$num$list";
+		while ($redis->scard($list) > 0) {
+			my $key = $redis->spop($list);
+
+			$redis->del($key);
+		}
+
+
+		$redis->zrem("a$list", $num);
 	}
 }
 
@@ -279,10 +287,11 @@ sub get_full_hashes {
 	my $list			= $args{list}		|| '';
 
 	my @hashes = ();
+	my $redis = $self->redis();
 
-	my $keys = $self->redis()->keys("h$chunknum*$list");
+	my $keys = $redis->keys("h$chunknum*$list");
 	foreach my $key (@$keys) {
-		my $chunk = to_hash($self->redis()->hgetall($key));
+		my $chunk = to_hash($redis->hgetall($key));
 		push(@hashes, $chunk->{hash}) if ($chunk->{chunknum} == $chunknum 
 			&& exists($chunk->{timestamp}) && exists($chunk->{hash})
 			&& $chunk->{timestamp} >= $timestamp);
@@ -328,38 +337,29 @@ sub add_full_hashes {
 	my $timestamp		= $args{timestamp}		|| time();
 	my $full_hashes		= $args{full_hashes}	|| [];
 
+	my $redis = $self->redis();
+
 	foreach my $hash (@$full_hashes) {
 		my $key = "h" . $hash->{chunknum} . $hash->{hash} . $hash->{list};
-		$self->redis()->hset($key, "chunknum",  $hash->{chunknum}, "hash",  $hash->{hash}, "timestamp", $timestamp);
+		$redis->hmset($key, "chunknum",  $hash->{chunknum}, "hash",  $hash->{hash}, "timestamp", $timestamp);
 	}
 }
 
-# sub delete_full_hashes_1 {
-# 	my ($self, %args) 	= @_;
-# 	my $chunknums		= $args{chunknums}	|| [];
-# 	my $list			= $args{list}		|| croak "Missing list name\n";
-# 
-# 	foreach my $num (@$chunknums) {
-# 		my @keys = $self->redis()->keys("h$num*$list");
-# 		foreach my $key (@keys) {
-# 			$self->redis()->del($key);
-# 		}
-# 	}
-# }
 
 sub delete_full_hashes {
 	my ($self, %args) 	= @_;
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{list}		|| croak "Missing list name\n";
 
-	my @keys = $self->redis()->keys("h*$list");
+	my $redis = $self->redis();
+
+	my @keys = $redis->keys("h*$list");
 	foreach my $key (@keys) {
 		foreach my $num (@$chunknums) {
-			$self->redis()->del($key) if ($key =~ /^h$num/);
+			$redis->del($key) if ($key =~ /^h$num/);
 		}
 	}
 }
-
 
 
 sub full_hash_error {
@@ -371,7 +371,7 @@ sub full_hash_error {
 
 	my $keys = $self->redis()->keys($key);
 	if (scalar(@$keys) == 0) {
-			$self->redis()->hset($key, "prefix", $prefix, "errors", 0, "timestamp", $timestamp);
+			$self->redis()->hmset($key, "prefix", $prefix, "errors", 0, "timestamp", $timestamp);
 	}
 	else {
 		$self->redis()->hincrby($key, "errors", 1);

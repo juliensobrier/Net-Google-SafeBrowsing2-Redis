@@ -10,6 +10,13 @@ The CPAN release is available at http://search.cpan.org/perldoc?Net::Google::Saf
 See http://search.cpan.org/~jsobrier/Net-Google-SafeBrowsing2/ for other back-ends: Sqlite, MySQL, Postgres, etc.
 
 
+IMPORTANT
+
+Version 0.3 breaks backward compatibility. If you are using version 0.2 or below, you need to reset your Redis database (i.e. start from an empty database).
+
+As of 07/31/2012, the Redis database takes 900 MB for both Google Safe Browsing lists (malware and phishing).
+
+
 INSTALLATION
 
 To install this module type the following:
