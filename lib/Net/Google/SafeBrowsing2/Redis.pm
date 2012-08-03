@@ -5,11 +5,13 @@ use warnings;
 
 use base 'Net::Google::SafeBrowsing2::Storage';
 
+
 use Carp;
 use Redis::hiredis;
+use Net::Google::SafeBrowsing2;
 
 
-our $VERSION = '0.4';
+our $VERSION = '0.5';
 
 
 =head1 NAME
@@ -503,15 +505,15 @@ Here are some numbers comparing the MySQL 0.6 back-end and Redis 0.4 back-end:
 
 Database update, from empty to full update:
 MySQL: 1330s
-Redis: 351s
+Redis 2.4: 351s
 
 10,000 URLs lookup
 MySQL: 6s
-Redis: 5s
+Redis 2.4: 5s
 
 Storage:
 MySQL: 154MB
-Redis: 780MB
+Redis 2.4: 780MB
 
 =back
 

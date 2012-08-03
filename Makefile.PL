@@ -7,6 +7,7 @@ WriteMakefile(
     VERSION_FROM      => 'lib/Net/Google/SafeBrowsing2/Redis.pm', # finds $VERSION
     PREREQ_PM         => {
 		Net::Google::SafeBrowsing2::Storage	=> '0.4',
+		Net::Google::SafeBrowsing2			=> 0,
 		Redis::hiredis						=> 0,
 	},
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005

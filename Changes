@@ -19,3 +19,6 @@ Revision history for Perl extension Net::Google::SafeBrowsing2::Redis.
 	- Use smaller name for blacklists (120MB saved)
 	- new option backward_compatible 
 	- new option keep_all
+
+0.5 Fri Aug 03 09:49:00
+	- requires Net::Google::SafeBrowsing2
