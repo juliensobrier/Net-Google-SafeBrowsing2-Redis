@@ -9,7 +9,7 @@ use Carp;
 use Redis::hiredis;
 
 
-our $VERSION = '0.3';
+our $VERSION = '0.4';
 
 
 =head1 NAME
@@ -61,9 +61,15 @@ Optional. Redis database name to connect to. 0 by default.
 
 Optional. Redis port number to connect to. 6379 by default.
 
+=item backward_compatible
+
+Optional. Stay backward compatible with 0.3, but requires a bigger Redis database. 0 (disabled) by default
+
+=item keep_all
+
+Optional. Keel all full hashes, even after they expire (45 minutes). 0 (disabled) by default
 
 =back
-
 
 =back
 
@@ -76,6 +82,8 @@ sub new {
 		host		=> '127.0.0.1',
 		database	=> 0,
 		port		=> 6379,
+		backward_compatible	=> 0,
+		keep_all	=> 0,
 
 		%args,
 	};
@@ -107,6 +115,22 @@ sub redis {
 	return $self->{redis};
 }
 
+my %mapping = (
+	Net::Google::SafeBrowsing2::MALWARE 	=> 'm', 
+	Net::Google::SafeBrowsing2::PHISHING 	=> 'p',
+
+	'm'	=> Net::Google::SafeBrowsing2::MALWARE,
+	'p'	=> Net::Google::SafeBrowsing2::PHISHING,
+);
+
+sub map {
+	my ($self, $key) 	= @_;
+
+	return $key if ($self->{backward_compatible});
+
+	return $mapping{$key} || $key;
+}
+
 
 sub add_chunks {
 	my ($self, %args) 	= @_;
@@ -114,6 +138,8 @@ sub add_chunks {
 	my $chunknum		= $args{chunknum}	|| 0;
 	my $chunks			= $args{chunks}		|| [];
 	my $list			= $args{'list'}		|| '';
+
+	$list = $self->map($list) unless ($self->{backward_compatible});
 
 	if ($type eq 's') {
 		$self->add_chunks_s(chunknum => $chunknum, chunks => $chunks, list => $list);
@@ -129,7 +155,6 @@ sub add_chunks {
 
 	if (scalar @$chunks == 0) { # keep empty chunks
 		my $key = $type . $chunknum . $list;
-		$redis->hmset($key, "list", $list, "hostkey", '', "prefix", '', "chunknum", $chunknum); # needed?
 
 		$redis->sadd($type . "l$chunknum$list", $key);
 	}
@@ -141,6 +166,7 @@ sub add_chunks_a {
 	my $chunks			= $args{chunks}		|| [];
 	my $list			= $args{'list'}		|| '';
 
+	# list already mapped by add_chunks
 	my $redis = $self->redis();
 
 	foreach my $chunk (@$chunks) {
@@ -158,6 +184,7 @@ sub add_chunks_s {
 	my $chunks			= $args{chunks}		|| [];
 	my $list			= $args{'list'}		|| '';
 
+	# list already mapped by add_chunks
 	my $redis = $self->redis();
 
 	foreach my $chunk (@$chunks) {
@@ -185,6 +212,7 @@ sub get_add_chunks {
 			next;
 		}
 		my $chunk = to_hash($redis->hgetall($key));
+		$chunk->{list} = $self->map($chunk->{list}) unless ($self->{backward_compatible});
 		push(@list, $chunk) if ($chunk->{hostkey} eq $hostkey);
 	}
 
@@ -207,6 +235,7 @@ sub get_sub_chunks {
 		}
 
 		my $chunk = to_hash($redis->hgetall($key));
+		$chunk->{list} = $self->map($chunk->{list}) unless ($self->{backward_compatible});
 		push(@list, $chunk) if ($chunk->{hostkey} eq $hostkey);
 	}
 
@@ -218,6 +247,7 @@ sub get_add_chunks_nums {
 	my ($self, %args) 	= @_;
 	my $list			= $args{'list'}		|| '';
 
+	# list already mapped by get_chunks_nums
 	return $self->get_chunks_nums(type => 'a', list => $list);
 }
 
@@ -225,6 +255,7 @@ sub get_sub_chunks_nums {
 	my ($self, %args) 	= @_;
 	my $list			= $args{'list'}		|| '';
 
+	# list already mapped by get_chunks_nums
 	return $self->get_chunks_nums(type => 's', list => $list);
 }
 
@@ -233,9 +264,9 @@ sub get_chunks_nums {
 	my $list			= $args{'list'}		|| '';
 	my $type			= $args{type}		|| 'a';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my $key = "$type$list";
 	my $values = $self->redis()->zrangebyscore($key, "-inf", "+inf");
-
 	return @$values;
 }
 
@@ -245,6 +276,7 @@ sub delete_add_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
@@ -265,6 +297,7 @@ sub delete_sub_ckunks {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{'list'}		|| '';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
@@ -286,6 +319,7 @@ sub get_full_hashes {
 	my $timestamp		= $args{timestamp}	|| 0;
 	my $list			= $args{list}		|| '';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my @hashes = ();
 	my $redis = $self->redis();
 
@@ -306,6 +340,7 @@ sub updated {
 	my $wait			= $args{'wait'}	|| 1800;
 	my $list			= $args{'list'}	|| '';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	$self->redis()->hmset($list, "time", $time, "errors", 0, "wait", $wait);
 }
 
@@ -316,6 +351,7 @@ sub update_error {
 	my $wait			= $args{'wait'}	|| 60;
 	my $errors			= $args{errors}	|| 1;
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	$self->redis()->hmset($list, "time", $time, "errors", $errors, "wait", $wait);
 }
 
@@ -323,6 +359,7 @@ sub last_update {
 	my ($self, %args) 	= @_;
 	my $list			= $args{'list'}	|| '';
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my $keys = $self->redis()->keys($list);
 	if (scalar @$keys > 0) {
 		return to_hash($self->redis()->hgetall($keys->[0]));
@@ -340,8 +377,9 @@ sub add_full_hashes {
 	my $redis = $self->redis();
 
 	foreach my $hash (@$full_hashes) {
-		my $key = "h" . $hash->{chunknum} . $hash->{hash} . $hash->{list};
+		my $key = "h" . $hash->{chunknum} . $hash->{hash} . $self->map( $hash->{list} );
 		$redis->hmset($key, "chunknum",  $hash->{chunknum}, "hash",  $hash->{hash}, "timestamp", $timestamp);
+		$redis->expire($key, 45 * 60) unless ($self->{keep_all});
 	}
 }
 
@@ -351,6 +389,7 @@ sub delete_full_hashes {
 	my $chunknums		= $args{chunknums}	|| [];
 	my $list			= $args{list}		|| croak "Missing list name\n";
 
+	$list = $self->map($list) unless ($self->{backward_compatible});
 	my $redis = $self->redis();
 
 	my @keys = $redis->keys("h*$list");
@@ -436,6 +475,10 @@ sub reset {
 	$self->redis()->flushdb();
 }
 
+sub close {
+	my ($self, %args) 	= @_;
+}
+
 
 sub to_hash {
 	my ($data) = @_;
@@ -449,6 +492,45 @@ sub to_hash {
 
 	return $result;
 }
+
+=back
+
+=head1 BENCHMARK
+
+=over 4
+
+Here are some numbers comparing the MySQL 0.6 back-end and Redis 0.4 back-end:
+
+Database update, from empty to full update:
+MySQL: 1330s
+Redis: 351s
+
+10,000 URLs lookup
+MySQL: 6s
+Redis: 5s
+
+Storage:
+MySQL: 154MB
+Redis: 780MB
+
+=back
+
+
+=head1 CHANGELOG
+
+=over 4
+
+=item 0.4
+
+New options backward_compatible and keep_all.
+
+Save 140MB in Redis (as of 08/01/2012)
+
+=item 0.3
+
+Break backward compatibility with previous versions. Make sure you start from a fresh database (reset your existing database if needed).
+
+Improve performances, fixes lookup. Requires 920MB for a full database (as of 07/31/2012)
 
 =back
 
