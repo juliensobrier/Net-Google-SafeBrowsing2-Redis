@@ -11,7 +11,7 @@ use Redis::hiredis;
 use Net::Google::SafeBrowsing2;
 
 
-our $VERSION = '0.5';
+our $VERSION = '0.6';
 
 
 =head1 NAME
@@ -198,6 +198,7 @@ sub add_chunks_s {
 	}
 }
 
+
 # TODO: avoid duplicate code
 sub get_add_chunks {
 	my ($self, %args) 	= @_;
@@ -221,7 +222,6 @@ sub get_add_chunks {
 	return @list;
 }
 
-
 sub get_sub_chunks {
 	my ($self, %args) = @_;
 	my $hostkey			= $args{hostkey}	|| '';
@@ -243,7 +243,6 @@ sub get_sub_chunks {
 
 	return @list;
 }
-
 
 sub get_add_chunks_nums {
 	my ($self, %args) 	= @_;
@@ -282,14 +281,25 @@ sub delete_add_ckunks {
 	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
-		my $list = "al$num$list";
-		while ($redis->scard($list) > 0) {
-			my $key = $redis->spop($list);
+		my $list2 = "al$num$list";
+		while ($redis->scard($list2) > 0) {
+			my $key = $redis->spop($list2);
+
+			my $host = $redis->hget('hostkey');
+			# Remove key from this list
+			$redis->srem("ah$host", $key);
+			if ($redis->scard("ah$host") == 0) {
+				$redis->del("ah$host");
+			}
 
 			$redis->del($key);
 		}
+		$redis->del($list); # list is empty now
 
 		$redis->zrem("a$list", $num);
+
+		# empty chunks
+		$redis->del("a$num" . $list);
 	}
 }
 
@@ -303,15 +313,25 @@ sub delete_sub_ckunks {
 	my $redis = $self->redis();
 
 	foreach my $num (@$chunknums) {
-		my $list = "sl$num$list";
-		while ($redis->scard($list) > 0) {
-			my $key = $redis->spop($list);
+		my $list2 = "sl$num$list";
+		while ($redis->scard($list2) > 0) {
+			my $key = $redis->spop($list2);
+
+			my $host = $redis->hget('hostkey');
+			# Remove key from this list
+			$redis->srem("sh$host", $key);
+			if ($redis->scard("sh$host") == 0) {
+				$redis->del("sh$host");
+			}
 
 			$redis->del($key);
 		}
+		$redis->del($list); # list is empty now
 
+		$redis->zrem("s$list", $num);
 
-		$redis->zrem("a$list", $num);
+		# empty chunks
+		$redis->del("s$num" . $list);
 	}
 }
 
@@ -521,6 +541,10 @@ Redis 2.4: 780MB
 =head1 CHANGELOG
 
 =over 4
+
+=item 0.6
+
+FIX: some keys were never deleted from Redis.
 
 =item 0.4
 

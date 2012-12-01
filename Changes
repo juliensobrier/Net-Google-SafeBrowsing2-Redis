@@ -22,3 +22,6 @@ Revision history for Perl extension Net::Google::SafeBrowsing2::Redis.
 
 0.5 Fri Aug 03 09:49:00
 	- requires Net::Google::SafeBrowsing2
+
+0.6 Fri Nov 30 18:04:00
+	- some Redis keys were never deleted
