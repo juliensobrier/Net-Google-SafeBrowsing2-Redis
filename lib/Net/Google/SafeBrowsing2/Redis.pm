@@ -36,8 +36,6 @@ This is an implementation of L<Net::Google::SafeBrowsing2::Storage> using Redis.
 
 =head1 CONSTRUCTOR
 
-=over 4
-
 =head2 new()
 
 Create a Net::Google::SafeBrowsing2::Redis object
@@ -70,8 +68,6 @@ Optional. Stay backward compatible with 0.3, but requires a bigger Redis databas
 =item keep_all
 
 Optional. Keel all full hashes, even after they expire (45 minutes). 0 (disabled) by default
-
-=back
 
 =back
 
